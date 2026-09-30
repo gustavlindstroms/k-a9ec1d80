@@ -46,13 +46,11 @@
     position: fixed; right: 5vw; bottom: 5vh; text-align: right;
     font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
   }
-  .omx {
+  .el {
     position: fixed; left: 5vw; bottom: 5vh;
     font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
   }
-  .omx strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .omx .up { color: var(--cyan); }
-  .omx .down { color: var(--orange); }
+  .el strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .weather strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; }
 </style>
 </head>
@@ -62,9 +60,9 @@
     <div class="time" id="time">--:--</div>
     <div class="date" id="date">&nbsp;</div>
   </main>
-  <div class="omx" id="omx" hidden>
-    <strong id="omxpct">–</strong>
-    <span id="omxdesc">OMXS30</span>
+  <div class="el" id="el" hidden>
+    <strong id="elnow">–</strong>
+    <span id="eldesc">Elpris SE4</span>
   </div>
   <div class="weather" id="weather" hidden>
     <strong id="temp">–</strong>
@@ -104,20 +102,34 @@
   weather();
   setInterval(weather, 15 * 60 * 1000);
 
-  // OMXS30, hämtas av en GitHub Action till omx.json
-  const nf = (n, d) => n.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d });
-  async function omx() {
+  // Elpris SE4 (spotpris exkl. moms och avgifter) från elprisetjustnu.se
+  let elDay = null, elPrices = [];
+  const ymd = () => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const ore = kr => Math.round(kr * 100);
+  async function elFetch() {
+    const day = ymd();
+    if (day === elDay && elPrices.length) return;
     try {
-      const d = await (await fetch('omx.json?t=' + Date.now(), { cache: 'no-store' })).json();
-      const pct = d.changePercent, el = $('omxpct');
-      el.textContent = `${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${nf(Math.abs(pct), 2)} %`;
-      el.className = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
-      $('omxdesc').textContent = `OMXS30 · ${nf(d.price, 0)}`;
-      $('omx').hidden = false;
-    } catch (e) { /* behåll senaste värde */ }
+      const [y, m, d] = day.split('-');
+      const res = await fetch(`https://www.elprisetjustnu.se/api/v1/prices/${y}/${m}-${d}_SE4.json`);
+      if (!res.ok) return;
+      elPrices = await res.json();
+      elDay = day;
+    } catch (e) { /* försök igen senare */ }
   }
-  omx();
-  setInterval(omx, 5 * 60 * 1000);
+  async function el() {
+    await elFetch();
+    if (!elPrices.length) return;
+    const now = Date.now();
+    const cur = elPrices.find(p => new Date(p.time_start) <= now && now < new Date(p.time_end));
+    const vals = elPrices.map(p => p.SEK_per_kWh);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    $('elnow').textContent = cur ? `${ore(cur.SEK_per_kWh)} öre/kWh` : '–';
+    $('eldesc').textContent = `Elpris SE4 · snitt idag ${ore(avg)} öre`;
+    $('el').hidden = false;
+  }
+  el();
+  setInterval(el, 60 * 1000);
 
   // Ladda om en gång per dygn (kl 04) så nya versioner slår igenom på skärmen
   setInterval(() => {
