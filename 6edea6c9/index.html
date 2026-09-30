@@ -46,6 +46,13 @@
     position: fixed; right: 5vw; bottom: 5vh; text-align: right;
     font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
   }
+  .omx {
+    position: fixed; left: 5vw; bottom: 5vh;
+    font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
+  }
+  .omx strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .omx .up { color: var(--cyan); }
+  .omx .down { color: var(--orange); }
   .weather strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; }
 </style>
 </head>
@@ -55,6 +62,10 @@
     <div class="time" id="time">--:--</div>
     <div class="date" id="date">&nbsp;</div>
   </main>
+  <div class="omx" id="omx" hidden>
+    <strong id="omxpct">–</strong>
+    <span id="omxdesc">OMXS30</span>
+  </div>
   <div class="weather" id="weather" hidden>
     <strong id="temp">–</strong>
     <span id="wdesc">Malmö</span>
@@ -92,6 +103,21 @@
   }
   weather();
   setInterval(weather, 15 * 60 * 1000);
+
+  // OMXS30, hämtas av en GitHub Action till omx.json
+  const nf = (n, d) => n.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d });
+  async function omx() {
+    try {
+      const d = await (await fetch('omx.json?t=' + Date.now(), { cache: 'no-store' })).json();
+      const pct = d.changePercent, el = $('omxpct');
+      el.textContent = `${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${nf(Math.abs(pct), 2)} %`;
+      el.className = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
+      $('omxdesc').textContent = `OMXS30 · ${nf(d.price, 0)}`;
+      $('omx').hidden = false;
+    } catch (e) { /* behåll senaste värde */ }
+  }
+  omx();
+  setInterval(omx, 5 * 60 * 1000);
 
   // Ladda om en gång per dygn (kl 04) så nya versioner slår igenom på skärmen
   setInterval(() => {
