@@ -25,30 +25,29 @@
     overflow: hidden;
     cursor: none;
   }
-  .logo { position: fixed; top: 5vh; left: 5vw; height: 4.2vh; min-height: 22px; }
+  .logo { position: fixed; top: 5vh; left: 5vw; height: 6vh; min-height: 30px; }
   main {
     height: 100%; display: flex; flex-direction: column;
     justify-content: center; padding-left: 5vw;
   }
   .time {
     font-weight: 800; letter-spacing: -0.04em; line-height: .9;
-    font-size: min(28vw, 42vh);
+    font-size: 21vw; font-size: min(23vw, 34vh);
     font-variant-numeric: tabular-nums;
   }
   .time .sec { font-weight: 300; font-size: .28em; letter-spacing: 0; color: var(--muted); margin-left: .25em; vertical-align: .15em; }
-  .date { margin-top: 3vh; font-weight: 400; font-size: min(4.2vw, 6vh); color: var(--muted); }
-  .date::first-letter { text-transform: uppercase; }
-  .bar {
+  .date { margin-top: 3vh; font-weight: 400; font-size: 4vw; font-size: min(4.2vw, 6vh); color: var(--muted); }
+    .bar {
     position: fixed; left: 0; right: 0; bottom: 0; height: .9vh; min-height: 5px;
     background: linear-gradient(90deg, var(--orange), var(--pink) 50%, var(--cyan));
   }
   .weather {
     position: fixed; right: 5vw; bottom: 5vh; text-align: right;
-    font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
+    font-size: 1.6vw; font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
   }
   .el {
     position: fixed; left: 5vw; bottom: 5vh;
-    font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
+    font-size: 1.6vw; font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
   }
   .el strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .weather strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; }
@@ -70,72 +69,132 @@
   </div>
   <div class="bar"></div>
 <script>
-  const TZ = 'Europe/Stockholm';
-  const tf = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
-  const df = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  const $ = id => document.getElementById(id);
+/* Skrivet i ES5 med XMLHttpRequest så att det fungerar i äldre TV-webbläsare. */
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
 
+  /* ---------- Servertid ----------
+     offset = servertid − TV:ns klocka. Mäts mot tidsserver, bästa av flera prov
+     (lägst svarstid), och mäts om var 10:e minut. */
+  var offset = 0, synced = false;
+  function now() { return Date.now() + offset; }
+
+  function get(url, cb) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.timeout = 8000;
+    x.onload = function () { cb(x.status >= 200 && x.status < 300 ? x.responseText : null); };
+    x.onerror = x.ontimeout = function () { cb(null); };
+    x.send();
+  }
+  var SOURCES = [
+    { url: 'https://time.akamai.com/?iso&ms', parse: function (t) { return Date.parse(t); } },
+    { url: 'https://timeapi.io/api/time/current/zone?timeZone=UTC', parse: function (t) { return Date.parse(JSON.parse(t).dateTime.slice(0, 23) + 'Z'); } }
+  ];
+  function sample(src, cb) {
+    var t0 = Date.now();
+    get(src.url + (src.url.indexOf('?') < 0 ? '?' : '&') + '_=' + t0, function (txt) {
+      var t1 = Date.now(), server = NaN;
+      try { server = txt ? src.parse(txt) : NaN; } catch (e) {}
+      cb(isNaN(server) ? null : { offset: server - (t0 + t1) / 2, rtt: t1 - t0 });
+    });
+  }
+  function sync(srcIdx) {
+    srcIdx = srcIdx || 0;
+    var src = SOURCES[srcIdx], best = null, n = 0;
+    (function next() {
+      sample(src, function (r) {
+        if (r && (!best || r.rtt < best.rtt)) best = r;
+        if (++n < 4) return next();
+        if (best) { offset = best.offset; synced = true; }
+        else if (srcIdx + 1 < SOURCES.length) sync(srcIdx + 1);
+      });
+    })();
+  }
+  sync();
+  setInterval(sync, 10 * 60 * 1000);
+
+  /* ---------- Stockholmstid utan att lita på TV:ns tidszon ----------
+     CET (UTC+1), sommartid CEST (UTC+2) från sista söndagen i mars 01:00 UTC
+     till sista söndagen i oktober 01:00 UTC. */
+  function lastSundayUTC(y, m) {
+    var d = new Date(Date.UTC(y, m + 1, 0, 1));
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return d.getTime();
+  }
+  function sthlm(ms) {
+    var y = new Date(ms).getUTCFullYear();
+    var dst = ms >= lastSundayUTC(y, 2) && ms < lastSundayUTC(y, 9);
+    var d = new Date(ms + (dst ? 2 : 1) * 3600000);
+    return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), wd: d.getUTCDay(),
+             h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
+  }
+  var DAYS = ['Söndag', 'Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag'];
+  var MONTHS = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
+  function ymd(t) { return t.y + '-' + pad(t.mo + 1) + '-' + pad(t.d); }
+
+  var lastReloadDay = null;
   function tick() {
-    const now = new Date();
-    const p = Object.fromEntries(tf.formatToParts(now).map(x => [x.type, x.value]));
-    $('time').innerHTML = `${p.hour}:${p.minute}<span class="sec">${p.second}</span>`;
-    $('date').textContent = df.format(now);
-    setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+    var ms = now(), t = sthlm(ms);
+    $('time').innerHTML = pad(t.h) + ':' + pad(t.mi) + '<span class="sec">' + pad(t.s) + '</span>';
+    $('date').textContent = DAYS[t.wd] + ' ' + t.d + ' ' + MONTHS[t.mo] + ' ' + t.y;
+    /* Ladda om kl 04 varje natt så nya versioner slår igenom */
+    if (t.h === 4 && t.mi === 0 && synced && lastReloadDay !== null && lastReloadDay !== ymd(t)) location.reload();
+    if (lastReloadDay === null) lastReloadDay = ymd(t);
+    setTimeout(tick, 1000 - (ms % 1000) + 5);
   }
   tick();
 
-  // Väder i Malmö via Open-Meteo (ingen API-nyckel)
-  const WMO = {0:'Klart',1:'Mest klart',2:'Halvklart',3:'Mulet',45:'Dimma',48:'Dimma',51:'Duggregn',53:'Duggregn',55:'Duggregn',
+  /* ---------- Väder i Malmö (Open-Meteo) ---------- */
+  var WMO = {0:'Klart',1:'Mest klart',2:'Halvklart',3:'Mulet',45:'Dimma',48:'Dimma',51:'Duggregn',53:'Duggregn',55:'Duggregn',
     61:'Regn',63:'Regn',65:'Kraftigt regn',66:'Underkylt regn',67:'Underkylt regn',71:'Snö',73:'Snö',75:'Kraftig snö',77:'Snö',
     80:'Regnskurar',81:'Regnskurar',82:'Kraftiga skurar',85:'Snöbyar',86:'Snöbyar',95:'Åska',96:'Åska',99:'Åska'};
-  const r = n => Math.round(n).toString().replace('-', '−');
-  async function weather() {
-    try {
-      const url = 'https://api.open-meteo.com/v1/forecast?latitude=55.605&longitude=13.0038'
-        + '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=Europe%2FStockholm&forecast_days=1';
-      const d = await (await fetch(url)).json();
-      $('temp').textContent = `${r(d.current.temperature_2m)}°`;
-      $('wdesc').textContent = `Malmö · ${WMO[d.current.weather_code] ?? ''} · ${r(d.daily.temperature_2m_min[0])}°/${r(d.daily.temperature_2m_max[0])}°`;
-      $('weather').hidden = false;
-    } catch (e) { /* behåll senaste värde */ }
+  function r(n) { return String(Math.round(n)).replace('-', '−'); }
+  function weather() {
+    get('https://api.open-meteo.com/v1/forecast?latitude=55.605&longitude=13.0038'
+      + '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=Europe%2FStockholm&forecast_days=1',
+      function (txt) {
+        if (!txt) return;
+        try {
+          var d = JSON.parse(txt);
+          $('temp').textContent = r(d.current.temperature_2m) + '°';
+          $('wdesc').textContent = 'Malmö · ' + (WMO[d.current.weather_code] || '') + ' · '
+            + r(d.daily.temperature_2m_min[0]) + '°/' + r(d.daily.temperature_2m_max[0]) + '°';
+          $('weather').hidden = false;
+        } catch (e) {}
+      });
   }
   weather();
   setInterval(weather, 15 * 60 * 1000);
 
-  // Elpris SE4 (spotpris exkl. moms och avgifter) från elprisetjustnu.se
-  let elDay = null, elPrices = [];
-  const ymd = () => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const ore = kr => Math.round(kr * 100);
-  async function elFetch() {
-    const day = ymd();
-    if (day === elDay && elPrices.length) return;
-    try {
-      const [y, m, d] = day.split('-');
-      const res = await fetch(`https://www.elprisetjustnu.se/api/v1/prices/${y}/${m}-${d}_SE4.json`);
-      if (!res.ok) return;
-      elPrices = await res.json();
-      elDay = day;
-    } catch (e) { /* försök igen senare */ }
-  }
-  async function el() {
-    await elFetch();
+  /* ---------- Elpris SE4, spotpris exkl. moms och avgifter (elprisetjustnu.se) ---------- */
+  var elDay = null, elPrices = [];
+  function ore(kr) { return Math.round(kr * 100); }
+  function elRender() {
     if (!elPrices.length) return;
-    const now = Date.now();
-    const cur = elPrices.find(p => new Date(p.time_start) <= now && now < new Date(p.time_end));
-    const vals = elPrices.map(p => p.SEK_per_kWh);
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    $('elnow').textContent = cur ? `${ore(cur.SEK_per_kWh)} öre/kWh` : '–';
-    $('eldesc').textContent = `Elpris SE4 · snitt idag ${ore(avg)} öre`;
+    var ms = now(), cur = null, sum = 0;
+    for (var i = 0; i < elPrices.length; i++) {
+      var p = elPrices[i];
+      sum += p.SEK_per_kWh;
+      if (Date.parse(p.time_start) <= ms && ms < Date.parse(p.time_end)) cur = p;
+    }
+    $('elnow').textContent = cur ? ore(cur.SEK_per_kWh) + ' öre/kWh' : '–';
+    $('eldesc').textContent = 'Elpris SE4 · snitt idag ' + ore(sum / elPrices.length) + ' öre';
     $('el').hidden = false;
   }
-  el();
+  function el() {
+    var day = ymd(sthlm(now()));
+    if (day === elDay && elPrices.length) return elRender();
+    var parts = day.split('-');
+    get('https://www.elprisetjustnu.se/api/v1/prices/' + parts[0] + '/' + parts[1] + '-' + parts[2] + '_SE4.json', function (txt) {
+      if (txt) { try { elPrices = JSON.parse(txt); elDay = day; } catch (e) {} }
+      elRender();
+    });
+  }
+  setTimeout(el, 1500); /* vänta in första tidssynken */
   setInterval(el, 60 * 1000);
-
-  // Ladda om en gång per dygn (kl 04) så nya versioner slår igenom på skärmen
-  setInterval(() => {
-    const h = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
-    if (h === '04:00') location.reload();
-  }, 60 * 1000);
+})();
 </script>
 </body>
 </html>
