@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Kontorsskärm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1f2625;           /* fördjupad Grön #42504E */
+    --bg-2: #42504E;
+    --text: #ffffff;
+    --muted: rgba(255,255,255,.62);
+    --orange: #FF6B0B; --pink: #FFB7F8; --cyan: #79F2FB;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 15% 10%, var(--bg-2) 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: Manrope, Arial, sans-serif;
+    overflow: hidden;
+    cursor: none;
+  }
+  .logo { position: fixed; top: 5vh; left: 5vw; height: 4.2vh; min-height: 22px; }
+  main {
+    height: 100%; display: flex; flex-direction: column;
+    justify-content: center; padding-left: 5vw;
+  }
+  .time {
+    font-weight: 800; letter-spacing: -0.04em; line-height: .9;
+    font-size: min(28vw, 42vh);
+    font-variant-numeric: tabular-nums;
+  }
+  .time .sec { font-weight: 300; font-size: .28em; letter-spacing: 0; color: var(--muted); margin-left: .25em; vertical-align: .15em; }
+  .date { margin-top: 3vh; font-weight: 400; font-size: min(4.2vw, 6vh); color: var(--muted); }
+  .date::first-letter { text-transform: uppercase; }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; height: .9vh; min-height: 5px;
+    background: linear-gradient(90deg, var(--orange), var(--pink) 50%, var(--cyan));
+  }
+  .weather {
+    position: fixed; right: 5vw; bottom: 5vh; text-align: right;
+    font-size: min(1.8vw, 2.6vh); color: var(--muted); line-height: 1.35;
+  }
+  .weather strong { display: block; color: var(--text); font-weight: 600; font-size: 1.9em; letter-spacing: -0.02em; }
+</style>
+</head>
+<body>
+  <img class="logo" src="logo-white.svg" alt="forefront">
+  <main>
+    <div class="time" id="time">--:--</div>
+    <div class="date" id="date">&nbsp;</div>
+  </main>
+  <div class="weather" id="weather" hidden>
+    <strong id="temp">–</strong>
+    <span id="wdesc">Malmö</span>
+  </div>
+  <div class="bar"></div>
+<script>
+  const TZ = 'Europe/Stockholm';
+  const tf = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const df = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const $ = id => document.getElementById(id);
+
+  function tick() {
+    const now = new Date();
+    const p = Object.fromEntries(tf.formatToParts(now).map(x => [x.type, x.value]));
+    $('time').innerHTML = `${p.hour}:${p.minute}<span class="sec">${p.second}</span>`;
+    $('date').textContent = df.format(now);
+    setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+  }
+  tick();
+
+  // Väder i Malmö via Open-Meteo (ingen API-nyckel)
+  const WMO = {0:'Klart',1:'Mest klart',2:'Halvklart',3:'Mulet',45:'Dimma',48:'Dimma',51:'Duggregn',53:'Duggregn',55:'Duggregn',
+    61:'Regn',63:'Regn',65:'Kraftigt regn',66:'Underkylt regn',67:'Underkylt regn',71:'Snö',73:'Snö',75:'Kraftig snö',77:'Snö',
+    80:'Regnskurar',81:'Regnskurar',82:'Kraftiga skurar',85:'Snöbyar',86:'Snöbyar',95:'Åska',96:'Åska',99:'Åska'};
+  const r = n => Math.round(n).toString().replace('-', '−');
+  async function weather() {
+    try {
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=55.605&longitude=13.0038'
+        + '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=Europe%2FStockholm&forecast_days=1';
+      const d = await (await fetch(url)).json();
+      $('temp').textContent = `${r(d.current.temperature_2m)}°`;
+      $('wdesc').textContent = `Malmö · ${WMO[d.current.weather_code] ?? ''} · ${r(d.daily.temperature_2m_min[0])}°/${r(d.daily.temperature_2m_max[0])}°`;
+      $('weather').hidden = false;
+    } catch (e) { /* behåll senaste värde */ }
+  }
+  weather();
+  setInterval(weather, 15 * 60 * 1000);
+
+  // Ladda om en gång per dygn (kl 04) så nya versioner slår igenom på skärmen
+  setInterval(() => {
+    const h = new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    if (h === '04:00') location.reload();
+  }, 60 * 1000);
+</script>
+</body>
+</html>
